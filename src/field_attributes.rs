@@ -320,6 +320,97 @@ where
         StringOrInt::Number(i) => Ok(i),
     }
 }
+/// Deserializes a number from string, a bool, or a number.
+///
+/// # Example:
+///
+/// ```rust
+/// use serde_aux::prelude::*;
+///
+/// #[derive(serde::Deserialize, Debug)]
+/// struct MyStruct {
+///     #[serde(deserialize_with = "deserialize_number_from_anything")]
+///     number_from_string: u64,
+/// }
+///
+/// let s = r#" { "number_from_string": "123" } "#;
+/// let a: MyStruct = serde_json::from_str(s).unwrap();
+/// assert_eq!(a.number_from_string, 123);
+///
+/// let s = r#" { "number_from_string": 444 } "#;
+/// let a: MyStruct = serde_json::from_str(s).unwrap();
+/// assert_eq!(a.number_from_string, 444);
+///
+/// let s = r#" { "number_from_string": true } "#;
+/// let a: MyStruct = serde_json::from_str(s).unwrap();
+/// assert_eq!(a.number_from_string, 1);
+///
+/// let s = r#" { "number_from_string": false } "#;
+/// let a: MyStruct = serde_json::from_str(s).unwrap();
+/// assert_eq!(a.number_from_string, 0);
+/// ```
+///
+/// For making it work with strong types you must implement `FromStr` trait. It is quite simple.
+///
+/// # Example
+///
+/// ```rust
+/// use std::str::FromStr;
+/// use std::num::{ParseIntError, ParseFloatError};
+///
+/// use serde_aux::prelude::*;
+///
+/// #[derive(serde::Deserialize, Debug, PartialEq)]
+/// struct IntId(u64);
+///
+/// impl FromStr for IntId {
+///     type Err = ParseIntError;
+///
+///     fn from_str(s: &str) -> Result<IntId, Self::Err> {
+///         Ok(IntId(u64::from_str(s)?))
+///     }
+/// }
+///
+/// #[derive(serde::Deserialize, Debug)]
+/// struct MyStruct {
+///     #[serde(deserialize_with = "deserialize_number_from_anything")]
+///     int_id: IntId,
+/// }
+///
+/// let s = r#"{ "int_id": "123" }"#;
+/// let a: MyStruct = serde_json::from_str(s).unwrap();
+/// assert_eq!(a.int_id.0, 123);
+///
+/// let s = r#"{ "int_id": 444 }"#;
+/// let a: MyStruct = serde_json::from_str(s).unwrap();
+/// assert_eq!(a.int_id.0, 444);
+/// ```
+pub fn deserialize_number_from_anything<'de, T, D>(deserializer: D) -> Result<T, D::Error>
+where
+    D: Deserializer<'de>,
+    T: FromStr + Deserialize<'de>,
+    <T as FromStr>::Err: Display,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum StringOrInt<T> {
+        String(String),
+        Number(T),
+        Bool(bool),
+    }
+
+    match StringOrInt::<T>::deserialize(deserializer)? {
+        StringOrInt::String(s) => s.parse::<T>().map_err(serde::de::Error::custom),
+        StringOrInt::Number(i) => Ok(i),
+        StringOrInt::Bool(b) => {
+            if b {
+                "1".parse::<T>().map_err(serde::de::Error::custom)
+            } else {
+                "0".parse::<T>().map_err(serde::de::Error::custom)
+            }
+        }
+    }
+}
 
 /// Deserializes an option number from string or a number.
 ///
