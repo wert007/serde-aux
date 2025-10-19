@@ -683,6 +683,155 @@ where
     }
 }
 
+/// Deserializes optional boolean from anything (string, number, boolean). If input is a string,
+/// it is expected, that it is possible to convert it to a number or it is representing true or false. The return boolean is
+/// `true` if the number was either `1` or `1.0` after parsing.
+///
+/// # Example
+///
+/// ```rust
+/// use serde_aux::prelude::*;
+///
+/// #[derive(serde::Deserialize, Debug)]
+/// struct MyStruct {
+///     #[serde(deserialize_with = "deserialize_bool_from_anything")]
+///     boolean: bool,
+/// }
+///
+/// let s = r#"{ "boolean": 1.0 }"#;
+/// let a: MyStruct = serde_json::from_str(s).unwrap();
+/// assert!(a.boolean);
+///
+/// let s = r#"{ "boolean": 0.0 }"#;
+/// let a: MyStruct = serde_json::from_str(s).unwrap();
+/// assert!(!a.boolean);
+///
+/// let s = r#"{ "boolean": 2.3 }"#;
+/// assert!(serde_json::from_str::<MyStruct>(s).is_err());
+///
+/// let s = r#"{ "boolean": 1 }"#;
+/// let a: MyStruct = serde_json::from_str(s).unwrap();
+/// assert!(a.boolean);
+///
+/// let s = r#"{ "boolean": 0 }"#;
+/// let a: MyStruct = serde_json::from_str(s).unwrap();
+/// assert!(!a.boolean);
+///
+/// let s = r#"{ "boolean": 2 }"#;
+/// assert!(serde_json::from_str::<MyStruct>(s).is_err());
+///
+/// let s = r#"{ "boolean": "1.0" }"#;
+/// let a: MyStruct = serde_json::from_str(s).unwrap();
+/// assert!(a.boolean);
+///
+/// let s = r#"{ "boolean": "0.0" }"#;
+/// let a: MyStruct = serde_json::from_str(s).unwrap();
+/// assert!(!a.boolean);
+///
+/// let s = r#"{ "boolean": "2.3" }"#;
+/// assert!(serde_json::from_str::<MyStruct>(s).is_err());
+///
+/// let s = r#"{ "boolean": "1" }"#;
+/// let a: MyStruct = serde_json::from_str(s).unwrap();
+/// assert!(a.boolean);
+///
+/// let s = r#"{ "boolean": "0" }"#;
+/// let a: MyStruct = serde_json::from_str(s).unwrap();
+/// assert!(!a.boolean);
+///
+/// let s = r#"{ "boolean": "TRUE" }"#;
+/// let a: MyStruct = serde_json::from_str(s).unwrap();
+/// assert!(a.boolean);
+///
+/// let s = r#"{ "boolean": "FALSE" }"#;
+/// let a: MyStruct = serde_json::from_str(s).unwrap();
+/// assert!(!a.boolean);
+///
+/// let s = r#"{ "boolean": "TruE" }"#;
+/// let a: MyStruct = serde_json::from_str(s).unwrap();
+/// assert!(a.boolean);
+///
+/// let s = r#"{ "boolean": "fAlsE" }"#;
+/// let a: MyStruct = serde_json::from_str(s).unwrap();
+/// assert!(!a.boolean);
+///
+/// let s = r#"{ "boolean": "true" }"#;
+/// let a: MyStruct = serde_json::from_str(s).unwrap();
+/// assert!(a.boolean);
+///
+/// let s = r#"{ "boolean": "false" }"#;
+/// let a: MyStruct = serde_json::from_str(s).unwrap();
+/// assert!(!a.boolean);
+///
+/// let s = r#"{ "boolean": "2" }"#;
+/// assert!(serde_json::from_str::<MyStruct>(s).is_err());
+///
+/// let s = r#"{ "boolean": "foo" }"#;
+/// assert!(serde_json::from_str::<MyStruct>(s).is_err());
+/// ```
+pub fn deserialize_optional_bool_from_anything<'de, D>(
+    deserializer: D,
+) -> Result<Option<bool>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum AnythingOrBool {
+        String(String),
+        Int(i64),
+        Float(f64),
+        Boolean(bool),
+    }
+
+    match <Option<AnythingOrBool>>::deserialize(deserializer)? {
+        None => Ok(None),
+        Some(AnythingOrBool::Boolean(b)) => Ok(Some(b)),
+        Some(AnythingOrBool::Int(i)) => match i {
+            1 => Ok(Some(true)),
+            0 => Ok(Some(false)),
+            _ => Err(serde::de::Error::custom("The number is neither 1 nor 0")),
+        },
+        Some(AnythingOrBool::Float(f)) => {
+            if (f - 1.0f64).abs() < f64::EPSILON {
+                Ok(Some(true))
+            } else if f == 0.0f64 {
+                Ok(Some(false))
+            } else {
+                Err(serde::de::Error::custom(
+                    "The number is neither 1.0 nor 0.0",
+                ))
+            }
+        }
+        Some(AnythingOrBool::String(string)) => {
+            if let Ok(b) = string.to_lowercase().parse::<bool>() {
+                Ok(Some(b))
+            } else if let Ok(i) = string.parse::<i64>() {
+                match i {
+                    1 => Ok(Some(true)),
+                    0 => Ok(Some(false)),
+                    _ => Err(serde::de::Error::custom("The number is neither 1 nor 0")),
+                }
+            } else if let Ok(f) = string.parse::<f64>() {
+                if (f - 1.0f64).abs() < f64::EPSILON {
+                    Ok(Some(true))
+                } else if f == 0.0f64 {
+                    Ok(Some(false))
+                } else {
+                    Err(serde::de::Error::custom(
+                        "The number is neither 1.0 nor 0.0",
+                    ))
+                }
+            } else {
+                Err(serde::de::Error::custom(format!(
+                    "Could not parse boolean from a string: {}",
+                    string
+                )))
+            }
+        }
+    }
+}
+
 /// Deserializes string from a number. If the original value is a number value,
 /// it will be converted to a string.
 ///
